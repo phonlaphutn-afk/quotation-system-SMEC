@@ -657,6 +657,21 @@ async function postToSheet(url, payload){
     return { sent:false, error: e.message || 'ไม่สามารถส่งคำขอออกไปได้ (network error)' };
   }
 }
+function buildItemsSummaryText(items){
+  return items.map((it, idx) => {
+    const lines = String(it.desc||'').split('\n').map(l=>l.trim()).filter(l=>l!=='');
+    const mainLine = lines[0] || '(ไม่มีรายละเอียด)';
+    const subLines = lines.slice(1);
+    const amount = (Number(it.qty)||0) * (Number(it.unitPrice)||0);
+    let text = `${idx+1}. ${mainLine} | จำนวน ${it.qty} ${it.unit} x ${fmtMoney(it.unitPrice)} = ${fmtMoney(amount)}`;
+    subLines.forEach(sl => { text += `\n   ${sl}`; });
+    const noteLines = String(it.note||'').split('\n').map(l=>l.trim()).filter(l=>l!=='');
+    if(noteLines.length){
+      text += `\n   หมายเหตุ: ${noteLines.join(' / ')}`;
+    }
+    return text;
+  }).join('\n');
+}
 async function sendToGoogleSheet(quoteId, record){
   if(!sheetsConfig.enabled || !sheetsConfig.url) return { skipped:true };
   const payload = {
@@ -669,12 +684,16 @@ async function sendToGoogleSheet(quoteId, record){
     customerPhone: record.meta.customerPhone||'',
     subject: record.meta.subject,
     attn: record.meta.attn,
+    itemsSummary: buildItemsSummaryText(record.items||[]),
+    itemCount: (record.items||[]).length,
     lineTotal: record.totals.lineTotal,
     discountAmount: (record.totals.discountAmount||0),
     vat: record.totals.vat,
     grand: record.totals.grand,
     preparedBy: record.meta.preparedBy||'',
     contactPhone: record.meta.contactPhone||'',
+    signerName: record.meta.signerName||'',
+    attachmentCount: (state.attachments||[]).length,
     savedAt: new Date().toISOString()
   };
   return postToSheet(sheetsConfig.url, payload);
