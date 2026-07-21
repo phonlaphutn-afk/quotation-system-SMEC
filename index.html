@@ -284,6 +284,9 @@
   .sign-status-text{font-size:12.5px; color:var(--ink-soft); margin-bottom:8px;}
   .sign-status-box.signed{background:var(--red-soft);}
   .sign-status-box.signed .sign-status-text{color:var(--teal); font-weight:600;}
+  .sig-preview-box{border:1px solid var(--border); border-radius:8px; padding:8px; background:#FCFBF8; min-height:44px; display:flex; align-items:center; gap:10px;}
+  .sig-preview-box img{max-height:40px; max-width:140px; object-fit:contain;}
+  .sig-preview-box .sig-preview-empty{font-size:12.5px; color:var(--ink-soft);}
 </style>
 </head>
 <body>
@@ -389,22 +392,28 @@
             <input type="text" id="f_contactPhone" placeholder="เช่น 081-234-5678">
             <label>ชื่อผู้ลงนาม (ช่อง "ขอแสดงความนับถือ") — เว้นว่างถ้าเป็นคนเดียวกับผู้ทำราคา</label>
             <input type="text" id="f_signerName" placeholder="ถ้าไม่กรอก จะใช้ชื่อผู้ทำราคาแทน">
-            <label>เตรียมลายเซ็น — วาดหรืออัปโหลดไว้ล่วงหน้า (ยังไม่ถูกใช้จนกว่าจะกด "ลงลายเซ็น" ด้านล่าง)</label>
-            <div class="sig-pad-wrap">
-              <canvas id="sigPad" width="280" height="110"></canvas>
-              <div class="sig-pad-hint">วาดด้วยเมาส์/นิ้ว</div>
-            </div>
-            <div style="display:flex; gap:8px; margin-top:6px;">
-              <button type="button" class="btn btn-ghost btn-sm" id="btnClearSig">ล้าง</button>
-              <button type="button" class="btn btn-ghost btn-sm" id="btnUploadSig">อัปโหลดรูปแทน</button>
-              <input type="file" id="sigFileInput" accept="image/*" style="display:none">
-            </div>
-            <div class="hint">ลายเซ็นที่เตรียมไว้จะถูกจดจำในเครื่องนี้ ใช้ได้กับทุกใบ แต่ต้องกด "ลงลายเซ็น" และใส่รหัสผ่านทุกครั้งที่จะนำไปใช้จริงในเอกสาร</div>
+
+            <label>ลายเซ็นอิเล็กทรอนิกส์</label>
+            <div id="sigPreviewBox" class="sig-preview-box"></div>
 
             <div class="sign-status-box" id="signStatusBox">
               <div id="signStatusText" class="sign-status-text">ใบนี้ยังไม่ได้ลงลายเซ็นอิเล็กทรอนิกส์</div>
-              <button type="button" class="btn btn-primary btn-sm" id="btnApplySign">✍️ ลงลายเซ็นอิเล็กทรอนิกส์</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnApplySign">✍️ ลงลายเซ็น (ใส่รหัสผ่าน)</button>
               <button type="button" class="btn btn-ghost btn-sm" id="btnRemoveSign" style="display:none">ยกเลิกลายเซ็นในใบนี้</button>
+            </div>
+
+            <button type="button" class="btn-icon" id="btnToggleSigSetup" style="margin-top:8px; font-size:11px;">⚙ ตั้งค่า/เปลี่ยนลายเซ็นที่บันทึกไว้</button>
+            <div id="sigSetupPanel" style="display:none; margin-top:8px;">
+              <div class="sig-pad-wrap">
+                <canvas id="sigPad" width="280" height="110"></canvas>
+                <div class="sig-pad-hint">วาดด้วยเมาส์/นิ้ว</div>
+              </div>
+              <div style="display:flex; gap:8px; margin-top:6px;">
+                <button type="button" class="btn btn-ghost btn-sm" id="btnClearSig">ล้าง</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnUploadSig">อัปโหลดรูปแทน</button>
+                <input type="file" id="sigFileInput" accept="image/*" style="display:none">
+              </div>
+              <div class="hint">วาดหรืออัปโหลดไว้ครั้งเดียว ระบบจะจดจำไว้ในเครื่องนี้ ใช้ได้กับทุกใบต่อไปนี้ — ไม่ต้องมาวาดใหม่ทุกครั้งที่จะลงลายเซ็น</div>
             </div>
           </fieldset>
 
@@ -606,6 +615,13 @@ async function storeDelete(key){
   try{ localStorage.removeItem(LS_PREFIX + key); }catch(e){}
 }
 async function loadIndex(){
+  if(sheetsConfig.enabled && sheetsConfig.url){
+    const result = await getFromSheet(sheetsConfig.url, 'getQuoteIndex');
+    if(result.ok && Array.isArray(result.data)){
+      await saveIndex(result.data);
+      return result.data;
+    }
+  }
   const v = await storeGet('smec:quote-index');
   try{ return v ? JSON.parse(v) : []; }catch(e){ return []; }
 }
@@ -613,7 +629,18 @@ async function saveIndex(list){ await storeSet('smec:quote-index', JSON.stringif
 async function saveRecord(id, data){ await storeSet('smec:quote:'+id, JSON.stringify(data)); }
 async function loadRecord(id){
   const v = await storeGet('smec:quote:'+id);
-  try{ return v ? JSON.parse(v) : null; }catch(e){ return null; }
+  if(v){ try{ return JSON.parse(v); }catch(e){} }
+  if(sheetsConfig.enabled && sheetsConfig.url){
+    const result = await getFromSheet(sheetsConfig.url, 'getQuoteDetail', {id});
+    if(result.ok && result.data && result.data.length && result.data[0].fullData){
+      try{
+        const record = JSON.parse(result.data[0].fullData);
+        await saveRecord(id, record);
+        return record;
+      }catch(e){ console.error('parse fullData failed', e); }
+    }
+  }
+  return null;
 }
 function counterKey(code, resetRule, dateObj){
   const yy = yyOf(dateObj);
@@ -816,7 +843,8 @@ async function sendToGoogleSheet(quoteId, record){
     contactPhone: record.meta.contactPhone||'',
     signerName: record.meta.signerName||'',
     attachmentCount: (state.attachments||[]).length,
-    savedAt: new Date().toISOString()
+    savedAt: new Date().toISOString(),
+    fullData: JSON.stringify(record)
   };
   return postToSheet(sheetsConfig.url, payload);
 }
@@ -913,6 +941,7 @@ async function saveSignatureFromCanvas(){
   if(isCanvasBlank(canvas)) return;
   currentSignatureDataUrl = canvas.toDataURL('image/png');
   await storeSet('smec:signature', currentSignatureDataUrl);
+  updateSigPreviewBox();
   updatePreview();
 }
 function clearSignaturePad(){
@@ -926,6 +955,15 @@ function drawImageOnSigPad(dataUrl){
   img.onload = () => { sigCtx.drawImage(img, 0, 0, canvas.width, canvas.height); };
   img.src = dataUrl;
 }
+function updateSigPreviewBox(){
+  const box = $('#sigPreviewBox');
+  if(!box) return;
+  if(currentSignatureDataUrl){
+    box.innerHTML = `<img src="${currentSignatureDataUrl}" alt="ลายเซ็นที่บันทึกไว้"><span class="hint" style="margin:0;">ลายเซ็นนี้บันทึกไว้แล้ว พร้อมใช้ทุกใบ</span>`;
+  } else {
+    box.innerHTML = `<span class="sig-preview-empty">ยังไม่มีลายเซ็นบันทึกไว้ — กด "⚙ ตั้งค่า/เปลี่ยนลายเซ็น" ด้านล่างเพื่อวาดหรืออัปโหลดครั้งแรก</span>`;
+  }
+}
 async function loadSavedSignature(){
   initSignaturePad();
   const v = await storeGet('smec:signature');
@@ -933,12 +971,18 @@ async function loadSavedSignature(){
     currentSignatureDataUrl = v;
     drawImageOnSigPad(v);
   }
+  updateSigPreviewBox();
   updatePreview();
 }
+$('#btnToggleSigSetup').addEventListener('click', () => {
+  const panel = $('#sigSetupPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+});
 $('#btnClearSig').addEventListener('click', async () => {
   clearSignaturePad();
   currentSignatureDataUrl = null;
   await storeDelete('smec:signature');
+  updateSigPreviewBox();
   updatePreview();
 });
 $('#btnUploadSig').addEventListener('click', () => $('#sigFileInput').click());
@@ -950,6 +994,7 @@ $('#sigFileInput').addEventListener('change', async e => {
     currentSignatureDataUrl = dataUrl;
     await storeSet('smec:signature', dataUrl);
     drawImageOnSigPad(dataUrl);
+    updateSigPreviewBox();
   }catch(err){
     alert('อัปโหลดรูปลายเซ็นไม่สำเร็จ: ' + err.message);
   }
@@ -974,7 +1019,8 @@ function updateSignStatusUI(){
 }
 $('#btnApplySign').addEventListener('click', async () => {
   if(!currentSignatureDataUrl){
-    alert('กรุณาวาดหรืออัปโหลดลายเซ็นในกรอบด้านบนก่อน');
+    alert('ยังไม่มีลายเซ็นบันทึกไว้ในเครื่องนี้ กรุณาตั้งค่าลายเซ็นก่อน (เปิดแผงด้านล่างให้แล้ว)');
+    $('#sigSetupPanel').style.display = 'block';
     return;
   }
   const ok = await verifyOrSetSignaturePin();
