@@ -198,6 +198,8 @@
   .sign-grid{display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:22px; font-size:13.5px; text-align:center;}
   .sign-grid .role{font-weight:700; margin-bottom:0;}
   .sign-grid .dots{margin-top:34px; letter-spacing:1px;}
+  .sig-image-wrap{margin-top:6px; height:56px; display:flex; align-items:flex-end; justify-content:center;}
+  .sig-image{max-height:56px; max-width:200px; object-fit:contain;}
   .sign-grid .name-line{margin-top:4px;}
   .sign-grid .date-line{margin-top:4px;}
 
@@ -258,11 +260,34 @@
     .attach-page embed{width:100%; height:277mm;}
     .no-split{break-inside:avoid; page-break-inside:avoid;}
     tr{break-inside:avoid; page-break-inside:avoid;}
+  }  .auth-gate{
+    position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(180deg,var(--navy),var(--navy-2));
   }
+  .auth-box{
+    width:340px; max-width:90vw; background:#fff; border-radius:14px; padding:32px 28px;
+    box-shadow:0 20px 60px rgba(0,0,0,.35); text-align:center;
+  }
+  .auth-brand{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:3px; color:var(--gold); text-transform:uppercase; margin-bottom:6px;}
+  .auth-box h2{margin:0 0 6px; font-size:18px; color:var(--navy);}
+  .auth-sub{font-size:12.5px; color:var(--ink-soft); margin:0 0 18px; line-height:1.5;}
+  .auth-input{
+    width:100%; font-family:'Sarabun',sans-serif; font-size:15px; padding:11px 12px; border:1px solid var(--border);
+    border-radius:8px; margin-bottom:10px; text-align:center; letter-spacing:2px;
+  }
+  .auth-error{color:var(--red); font-size:12.5px; min-height:16px; margin-bottom:4px;}
+
+  .sig-pad-wrap{position:relative; border:1.5px dashed var(--border); border-radius:8px; background:#FCFBF8; overflow:hidden;}
+  .sig-pad-wrap canvas{display:block; width:100%; height:110px; cursor:crosshair; touch-action:none;}
+  .sig-pad-hint{position:absolute; bottom:4px; right:8px; font-size:10px; color:var(--ink-soft); pointer-events:none;}
+  .sign-status-box{margin-top:12px; padding:10px; border-radius:8px; background:#FAF9F5; border:1px solid var(--border);}
+  .sign-status-text{font-size:12.5px; color:var(--ink-soft); margin-bottom:8px;}
+  .sign-status-box.signed{background:var(--red-soft);}
+  .sign-status-box.signed .sign-status-text{color:var(--teal); font-weight:600;}
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" id="appRoot">
   <div class="topbar no-print">
     <div class="topbar-inner">
       <div class="brand">
@@ -364,6 +389,23 @@
             <input type="text" id="f_contactPhone" placeholder="เช่น 081-234-5678">
             <label>ชื่อผู้ลงนาม (ช่อง "ขอแสดงความนับถือ") — เว้นว่างถ้าเป็นคนเดียวกับผู้ทำราคา</label>
             <input type="text" id="f_signerName" placeholder="ถ้าไม่กรอก จะใช้ชื่อผู้ทำราคาแทน">
+            <label>เตรียมลายเซ็น — วาดหรืออัปโหลดไว้ล่วงหน้า (ยังไม่ถูกใช้จนกว่าจะกด "ลงลายเซ็น" ด้านล่าง)</label>
+            <div class="sig-pad-wrap">
+              <canvas id="sigPad" width="280" height="110"></canvas>
+              <div class="sig-pad-hint">วาดด้วยเมาส์/นิ้ว</div>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:6px;">
+              <button type="button" class="btn btn-ghost btn-sm" id="btnClearSig">ล้าง</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btnUploadSig">อัปโหลดรูปแทน</button>
+              <input type="file" id="sigFileInput" accept="image/*" style="display:none">
+            </div>
+            <div class="hint">ลายเซ็นที่เตรียมไว้จะถูกจดจำในเครื่องนี้ ใช้ได้กับทุกใบ แต่ต้องกด "ลงลายเซ็น" และใส่รหัสผ่านทุกครั้งที่จะนำไปใช้จริงในเอกสาร</div>
+
+            <div class="sign-status-box" id="signStatusBox">
+              <div id="signStatusText" class="sign-status-text">ใบนี้ยังไม่ได้ลงลายเซ็นอิเล็กทรอนิกส์</div>
+              <button type="button" class="btn btn-primary btn-sm" id="btnApplySign">✍️ ลงลายเซ็นอิเล็กทรอนิกส์</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btnRemoveSign" style="display:none">ยกเลิกลายเซ็นในใบนี้</button>
+            </div>
           </fieldset>
 
           <div class="action-row">
@@ -410,6 +452,17 @@
               <button type="button" class="btn btn-ghost btn-sm" id="btnTestSheets">ทดสอบ</button>
             </div>
             <div class="hint" id="sheetsStatus">ยังไม่ได้ตั้งค่า URL — ดูวิธีตั้งค่า Google Apps Script ท้ายหน้านี้</div>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnRefreshShared" style="margin-top:10px;">🔄 ดึงรายชื่อลูกค้า/รหัสบริษัทล่าสุดจาก Sheet</button>
+            <div class="hint">ใช้เมื่อเพิ่งมีคนอื่นเพิ่มลูกค้า/รหัสบริษัทจากเครื่องอื่น จะได้เห็นข้อมูลล่าสุดโดยไม่ต้องรีเฟรชหน้าเว็บ</div>
+          </div>
+        </div>
+        <div class="sheets-panel no-print">
+          <div class="sheets-panel-head">
+            <span>✍️ รหัสผ่านลายเซ็นอิเล็กทรอนิกส์</span>
+          </div>
+          <div class="sheets-panel-body">
+            <button type="button" class="btn btn-ghost btn-sm" id="btnChangeSigPassword">เปลี่ยนรหัสผ่านลายเซ็น</button>
+            <div class="hint">รหัสผ่านนี้ใช้ยืนยันตัวตนก่อนลงลายเซ็นอิเล็กทรอนิกส์ในเอกสารแต่ละใบ ป้องกันไม่ให้คนอื่นใช้ลายเซ็นที่บันทึกไว้แทนคุณโดยไม่ได้รับอนุญาต</div>
           </div>
         </div>
         <div class="history-toolbar no-print">
@@ -439,7 +492,7 @@ const COMPANY = {
 };
 const THAI_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 const DEFAULT_CODES = [
-  { code:'07', name:'งานนอก / บริษัทอื่นๆ ที่ไม่ใช่ในเครือ', reset:'monthly' },
+  { code:'07', name:'โนเบล เอ็นซี จำกัด', reset:'yearly' },
   { code:'10', name:'Bluefalo Petcare', reset:'yearly' },
   { code:'11', name:'Bluefalo', reset:'yearly' },
   { code:'12', name:'BLUEFALO FOOD PRODUCTS', reset:'yearly' }
@@ -570,18 +623,30 @@ function counterKey(code, resetRule, dateObj){
 async function peekNextRunning(code, resetRule, dateObj){
   const key = counterKey(code, resetRule, dateObj);
   const v = await storeGet(key);
-  const cur = v ? (parseInt(v,10)||0) : 0;
+  let cur = v ? (parseInt(v,10)||0) : 0;
+  const sheetMax = await getMaxRunningFromSheet(code, resetRule, dateObj);
+  if(sheetMax > cur) cur = sheetMax;
   return { yy: yyOf(dateObj), running: pad(cur+1,3) };
 }
 async function consumeNextRunning(code, resetRule, dateObj){
   const key = counterKey(code, resetRule, dateObj);
   const v = await storeGet(key);
-  const cur = v ? (parseInt(v,10)||0) : 0;
+  let cur = v ? (parseInt(v,10)||0) : 0;
+  const sheetMax = await getMaxRunningFromSheet(code, resetRule, dateObj);
+  if(sheetMax > cur) cur = sheetMax;
   const next = cur+1;
   await storeSet(key, String(next));
   return { yy: yyOf(dateObj), running: pad(next,3) };
 }
 async function loadCodes(){
+  if(sheetsConfig.enabled && sheetsConfig.url){
+    const result = await getFromSheet(sheetsConfig.url, 'getCodes');
+    if(result.ok && result.data && result.data.length){
+      codesList = result.data.map(r => ({code:String(r.code), name:r.name, reset:r.reset}));
+      await storeSet('smec:company-codes', JSON.stringify(codesList));
+      return;
+    }
+  }
   const v = await storeGet('smec:company-codes');
   if(v){
     try{ codesList = JSON.parse(v); if(!Array.isArray(codesList) || !codesList.length) codesList = [...DEFAULT_CODES]; }
@@ -592,15 +657,39 @@ async function loadCodes(){
   await storeSet('smec:company-codes', JSON.stringify(codesList));
 }
 async function saveCodes(){ await storeSet('smec:company-codes', JSON.stringify(codesList)); }
+async function pushCodeToSheet(codeObj){
+  if(!sheetsConfig.enabled || !sheetsConfig.url) return;
+  postToSheet(sheetsConfig.url, { action:'saveCode', code:codeObj.code, name:codeObj.name, reset:codeObj.reset });
+}
+async function deleteCodeFromSheet(codeStr){
+  if(!sheetsConfig.enabled || !sheetsConfig.url) return;
+  postToSheet(sheetsConfig.url, { action:'deleteCode', code:codeStr });
+}
 
 /* ---- Customer directory ---- */
 let customersList = [];
 async function loadCustomers(){
+  if(sheetsConfig.enabled && sheetsConfig.url){
+    const result = await getFromSheet(sheetsConfig.url, 'getCustomers');
+    if(result.ok){
+      customersList = (result.data||[]).map(r => ({id:r.id, company:r.company, attn:r.attn||'', phone:r.phone||'', updatedAt:r.updatedAt}));
+      await storeSet('smec:customers', JSON.stringify(customersList));
+      return;
+    }
+  }
   const v = await storeGet('smec:customers');
   if(v){ try{ customersList = JSON.parse(v); if(!Array.isArray(customersList)) customersList = []; }catch(e){ customersList = []; } }
   else customersList = [];
 }
 async function saveCustomers(){ await storeSet('smec:customers', JSON.stringify(customersList)); }
+async function pushCustomerToSheet(cust){
+  if(!sheetsConfig.enabled || !sheetsConfig.url) return;
+  postToSheet(sheetsConfig.url, { action:'saveCustomer', id:cust.id, company:cust.company, attn:cust.attn||'', phone:cust.phone||'' });
+}
+async function deleteCustomerFromSheet(custId){
+  if(!sheetsConfig.enabled || !sheetsConfig.url) return;
+  postToSheet(sheetsConfig.url, { action:'deleteCustomer', id:custId });
+}
 function findCustomer(companyName){
   const key = (companyName||'').trim().toLowerCase();
   if(!key) return null;
@@ -610,19 +699,23 @@ async function upsertCustomer(company, attn, phone){
   company = (company||'').trim();
   if(!company) return;
   const existing = findCustomer(company);
+  let target;
   if(existing){
     existing.company = company;
     if(attn && attn.trim()) existing.attn = attn.trim();
     if(phone && phone.trim()) existing.phone = phone.trim();
     existing.updatedAt = Date.now();
+    target = existing;
   } else {
-    customersList.unshift({
+    target = {
       id: 'cust_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
       company, attn: (attn||'').trim(), phone: (phone||'').trim(), updatedAt: Date.now()
-    });
+    };
+    customersList.unshift(target);
   }
   await saveCustomers();
   populateCustomerDatalist();
+  pushCustomerToSheet(target);
 }
 function populateCustomerDatalist(){
   const dl = $('#customerDatalist');
@@ -657,6 +750,29 @@ async function postToSheet(url, payload){
     return { sent:false, error: e.message || 'ไม่สามารถส่งคำขอออกไปได้ (network error)' };
   }
 }
+async function getFromSheet(url, action, extraParams){
+  try{
+    const sep = url.includes('?') ? '&' : '?';
+    let fullUrl = url + sep + 'action=' + encodeURIComponent(action);
+    if(extraParams){
+      for(const k in extraParams){ fullUrl += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(extraParams[k]); }
+    }
+    const res = await fetch(fullUrl, { method:'GET' });
+    if(!res.ok) return { ok:false, error:'HTTP '+res.status };
+    const json = await res.json();
+    return { ok:true, data: json.data || [], max: json.max };
+  }catch(e){
+    console.error('getFromSheet failed', e);
+    return { ok:false, error: e.message || 'อ่านข้อมูลจาก Sheet ไม่สำเร็จ' };
+  }
+}
+async function getMaxRunningFromSheet(code, resetRule, dateObj){
+  if(!sheetsConfig.enabled || !sheetsConfig.url) return 0;
+  const period = resetRule === 'monthly' ? `${yyOf(dateObj)}-${mmOf(dateObj)}` : yyOf(dateObj);
+  const result = await getFromSheet(sheetsConfig.url, 'getMaxRunning', { code, period, resetRule });
+  if(result.ok && typeof result.max === 'number') return result.max;
+  return 0;
+}
 function buildItemsSummaryText(items){
   return items.map((it, idx) => {
     const lines = String(it.desc||'').split('\n').map(l=>l.trim()).filter(l=>l!=='');
@@ -674,10 +790,14 @@ function buildItemsSummaryText(items){
 }
 async function sendToGoogleSheet(quoteId, record){
   if(!sheetsConfig.enabled || !sheetsConfig.url) return { skipped:true };
+  const baseParts = (state.baseNumber||'').split('-');
+  const runningNumber = baseParts.length >= 4 ? parseInt(baseParts[3],10) : 0;
   const payload = {
     id: quoteId,
     baseNumber: state.baseNumber,
+    runningNumber: runningNumber,
     revision: state.revision,
+    revisionNote: record.revisionNote || '',
     date: record.meta.dateISO,
     code: record.meta.code,
     customer: record.meta.customer,
@@ -687,6 +807,8 @@ async function sendToGoogleSheet(quoteId, record){
     itemsSummary: buildItemsSummaryText(record.items||[]),
     itemCount: (record.items||[]).length,
     lineTotal: record.totals.lineTotal,
+    discountType: record.meta.discountType || 'amount',
+    discountValue: record.meta.discountValue || 0,
     discountAmount: (record.totals.discountAmount||0),
     vat: record.totals.vat,
     grand: record.totals.grand,
@@ -713,7 +835,9 @@ function defaultMeta(){
     payment:'การชำระเงิน 2 งวด\nงวดที่ 1 เมื่อส่งเครื่องจักรและอุปกรณ์ถึงโรงงาน ชำระ 80%\nงวดที่ 2 เมื่องานติดตั้งแล้วเสร็จ พร้อม Test Run เครื่องจักรแล้วเสร็จ ชำระ 20%',
     preparedBy:'',
     contactPhone:'',
-    signerName:''
+    signerName:'',
+    signed:false,
+    appliedSignatureDataUrl:''
   };
 }
 let state = {
@@ -732,6 +856,158 @@ const $ = sel => document.querySelector(sel);
 const itemsContainer = $('#itemsContainer');
 const docPreview = $('#docPreview');
 const attachmentsList = $('#attachmentsList');
+
+/* ============================= SIGNATURE PAD ============================= */
+let sigDrawing = false;
+let sigCtx = null;
+let currentSignatureDataUrl = null;
+function initSignaturePad(){
+  const canvas = $('#sigPad');
+  sigCtx = canvas.getContext('2d');
+  sigCtx.strokeStyle = '#132038';
+  sigCtx.lineWidth = 2.4;
+  sigCtx.lineCap = 'round';
+  sigCtx.lineJoin = 'round';
+  function getPos(e){
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * (canvas.width/rect.width),
+      y: (clientY - rect.top) * (canvas.height/rect.height)
+    };
+  }
+  function start(e){
+    sigDrawing = true;
+    const p = getPos(e);
+    sigCtx.beginPath();
+    sigCtx.moveTo(p.x, p.y);
+    e.preventDefault();
+  }
+  function move(e){
+    if(!sigDrawing) return;
+    const p = getPos(e);
+    sigCtx.lineTo(p.x, p.y);
+    sigCtx.stroke();
+    e.preventDefault();
+  }
+  async function end(){
+    if(!sigDrawing) return;
+    sigDrawing = false;
+    await saveSignatureFromCanvas();
+  }
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, {passive:false});
+  canvas.addEventListener('touchmove', move, {passive:false});
+  canvas.addEventListener('touchend', end);
+}
+function isCanvasBlank(canvas){
+  const blank = document.createElement('canvas');
+  blank.width = canvas.width; blank.height = canvas.height;
+  return canvas.toDataURL() === blank.toDataURL();
+}
+async function saveSignatureFromCanvas(){
+  const canvas = $('#sigPad');
+  if(isCanvasBlank(canvas)) return;
+  currentSignatureDataUrl = canvas.toDataURL('image/png');
+  await storeSet('smec:signature', currentSignatureDataUrl);
+  updatePreview();
+}
+function clearSignaturePad(){
+  const canvas = $('#sigPad');
+  sigCtx.clearRect(0, 0, canvas.width, canvas.height);
+}
+function drawImageOnSigPad(dataUrl){
+  const canvas = $('#sigPad');
+  clearSignaturePad();
+  const img = new Image();
+  img.onload = () => { sigCtx.drawImage(img, 0, 0, canvas.width, canvas.height); };
+  img.src = dataUrl;
+}
+async function loadSavedSignature(){
+  initSignaturePad();
+  const v = await storeGet('smec:signature');
+  if(v){
+    currentSignatureDataUrl = v;
+    drawImageOnSigPad(v);
+  }
+  updatePreview();
+}
+$('#btnClearSig').addEventListener('click', async () => {
+  clearSignaturePad();
+  currentSignatureDataUrl = null;
+  await storeDelete('smec:signature');
+  updatePreview();
+});
+$('#btnUploadSig').addEventListener('click', () => $('#sigFileInput').click());
+$('#sigFileInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  try{
+    const dataUrl = await compressImage(file, 500, 0.9);
+    currentSignatureDataUrl = dataUrl;
+    await storeSet('smec:signature', dataUrl);
+    drawImageOnSigPad(dataUrl);
+  }catch(err){
+    alert('อัปโหลดรูปลายเซ็นไม่สำเร็จ: ' + err.message);
+  }
+  e.target.value = '';
+});
+function updateSignStatusUI(){
+  const box = $('#signStatusBox');
+  const text = $('#signStatusText');
+  const applyBtn = $('#btnApplySign');
+  const removeBtn = $('#btnRemoveSign');
+  if(state.meta.signed && state.meta.appliedSignatureDataUrl){
+    box.classList.add('signed');
+    text.textContent = '✓ ลงลายเซ็นอิเล็กทรอนิกส์ในใบนี้แล้ว';
+    applyBtn.style.display = 'none';
+    removeBtn.style.display = 'inline-block';
+  } else {
+    box.classList.remove('signed');
+    text.textContent = 'ใบนี้ยังไม่ได้ลงลายเซ็นอิเล็กทรอนิกส์';
+    applyBtn.style.display = 'inline-block';
+    removeBtn.style.display = 'none';
+  }
+}
+$('#btnApplySign').addEventListener('click', async () => {
+  if(!currentSignatureDataUrl){
+    alert('กรุณาวาดหรืออัปโหลดลายเซ็นในกรอบด้านบนก่อน');
+    return;
+  }
+  const ok = await verifyOrSetSignaturePin();
+  if(!ok) return;
+  state.meta.signed = true;
+  state.meta.appliedSignatureDataUrl = currentSignatureDataUrl;
+  updateSignStatusUI();
+  updatePreview();
+  if(state.editingId){
+    await persistCurrentQuoteSilently();
+    flashHint('ลงลายเซ็นและบันทึกเรียบร้อยแล้ว');
+  } else {
+    flashHint('ลงลายเซ็นแล้ว — จะถูกบันทึกถาวรพร้อมกับตอนกด "บันทึกและออกเลขที่ใหม่"');
+  }
+});
+$('#btnRemoveSign').addEventListener('click', async () => {
+  if(!confirm('ยกเลิกลายเซ็นในใบนี้? (ไม่ต้องใช้รหัสผ่าน)')) return;
+  state.meta.signed = false;
+  state.meta.appliedSignatureDataUrl = '';
+  updateSignStatusUI();
+  updatePreview();
+  if(state.editingId){
+    await persistCurrentQuoteSilently();
+    flashHint('ยกเลิกลายเซ็นและบันทึกเรียบร้อยแล้ว');
+  }
+});
+async function persistCurrentQuoteSilently(){
+  if(!state.editingId) return;
+  const existing = await loadRecord(state.editingId);
+  const record = {...currentRecordPayload(), createdAt: existing?.createdAt || Date.now()};
+  await saveRecord(state.editingId, record);
+  await upsertIndexEntry(state.editingId);
+}
 
 /* ============================= ATTACHMENTS ============================= */
 function fmtBytes(n){
@@ -1018,6 +1294,7 @@ function fillFormFromState(){
   $('#f_discountType').value = state.meta.discountType || 'amount';
   $('#f_discountValue').value = state.meta.discountValue || 0;
   updateDiscountHint();
+  updateSignStatusUI();
   renderItemRows();
 }
 function readFormIntoState(){
@@ -1093,10 +1370,13 @@ function renderCodesPanel(){
   const panel = $('#codesPanel');
   panel.innerHTML = `
     <div class="codes-panel-box">
+      <datalist id="codeCompanyDatalist">
+        ${customersList.map(c => `<option value="${esc(c.company)}"></option>`).join('')}
+      </datalist>
       ${codesList.map((c,i) => `
         <div class="codes-panel-row">
           <span class="code-tag">${esc(c.code)}</span>
-          <input type="text" data-edit-name="${i}" value="${esc(c.name)}" style="flex:1;">
+          <input type="text" data-edit-name="${i}" value="${esc(c.name)}" list="codeCompanyDatalist" style="flex:1;">
           <select data-edit-reset="${i}">
             <option value="monthly" ${c.reset==='monthly'?'selected':''}>รายเดือน</option>
             <option value="yearly" ${c.reset==='yearly'?'selected':''}>รายปี</option>
@@ -1106,13 +1386,14 @@ function renderCodesPanel(){
       `).join('')}
       <div class="codes-panel-add">
         <input type="text" id="newCodeVal" placeholder="รหัส เช่น 13" maxlength="4">
-        <input type="text" id="newCodeName" placeholder="ชื่อบริษัท/กลุ่มลูกค้า">
+        <input type="text" id="newCodeName" placeholder="พิมพ์เพื่อค้นหาลูกค้าเก่า หรือชื่อใหม่" list="codeCompanyDatalist">
         <select id="newCodeReset">
           <option value="monthly">รายเดือน</option>
           <option value="yearly" selected>รายปี</option>
         </select>
         <button type="button" class="btn btn-primary btn-sm" id="btnAddCode">+ เพิ่ม</button>
       </div>
+      <div class="hint" style="margin-top:6px;">รหัส 10/11/12 ผูกกับบริษัทที่เคยมีประวัติ — พิมพ์ในช่องชื่อจะขึ้นตัวเลือกจากลูกค้าเก่าให้เลือกได้เลย</div>
     </div>
   `;
   panel.querySelectorAll('[data-edit-name]').forEach(inp => inp.addEventListener('change', async e => {
@@ -1122,6 +1403,7 @@ function renderCodesPanel(){
     populateCodeSelect();
     updateCodeResetHint();
     await refreshPendingIdAndPreview();
+    pushCodeToSheet(codesList[i]);
   }));
   panel.querySelectorAll('[data-edit-reset]').forEach(sel => sel.addEventListener('change', async e => {
     const i = Number(e.target.getAttribute('data-edit-reset'));
@@ -1130,17 +1412,20 @@ function renderCodesPanel(){
     populateCodeSelect();
     updateCodeResetHint();
     await refreshPendingIdAndPreview();
+    pushCodeToSheet(codesList[i]);
   }));
   panel.querySelectorAll('[data-del-code]').forEach(btn => btn.addEventListener('click', async e => {
     const i = Number(e.target.getAttribute('data-del-code'));
     if(codesList.length<=1){ alert('ต้องมีรหัสอย่างน้อย 1 รายการ'); return; }
     if(!confirm(`ลบรหัส ${codesList[i].code} · ${codesList[i].name}?`)) return;
+    const removedCode = codesList[i].code;
     codesList.splice(i,1);
     await saveCodes();
     renderCodesPanel();
     populateCodeSelect();
     updateCodeResetHint();
     await refreshPendingIdAndPreview();
+    deleteCodeFromSheet(removedCode);
   }));
   $('#btnAddCode').addEventListener('click', async () => {
     const code = $('#newCodeVal').value.trim();
@@ -1148,7 +1433,8 @@ function renderCodesPanel(){
     const reset = $('#newCodeReset').value;
     if(!code || !name){ alert('กรอกรหัสและชื่อให้ครบ'); return; }
     if(codesList.some(c=>c.code.toLowerCase()===code.toLowerCase())){ alert('มีรหัสนี้อยู่แล้ว'); return; }
-    codesList.push({code, name, reset});
+    const newCodeObj = {code, name, reset};
+    codesList.push(newCodeObj);
     await saveCodes();
     renderCodesPanel();
     populateCodeSelect();
@@ -1156,6 +1442,7 @@ function renderCodesPanel(){
     readFormIntoState();
     updateCodeResetHint();
     await refreshPendingIdAndPreview();
+    pushCodeToSheet(newCodeObj);
   });
 }
 $('#btnToggleCodes').addEventListener('click', () => {
@@ -1197,22 +1484,27 @@ function renderCustomersPanel(){
     const i = Number(e.target.getAttribute('data-cust-company'));
     customersList[i].company = e.target.value.trim() || customersList[i].company;
     await saveCustomers(); populateCustomerDatalist();
+    pushCustomerToSheet(customersList[i]);
   }));
   panel.querySelectorAll('[data-cust-attn]').forEach(inp => inp.addEventListener('change', async e => {
     const i = Number(e.target.getAttribute('data-cust-attn'));
     customersList[i].attn = e.target.value.trim();
     await saveCustomers();
+    pushCustomerToSheet(customersList[i]);
   }));
   panel.querySelectorAll('[data-cust-phone]').forEach(inp => inp.addEventListener('change', async e => {
     const i = Number(e.target.getAttribute('data-cust-phone'));
     customersList[i].phone = e.target.value.trim();
     await saveCustomers();
+    pushCustomerToSheet(customersList[i]);
   }));
   panel.querySelectorAll('[data-del-cust]').forEach(btn => btn.addEventListener('click', async e => {
     const i = Number(e.target.getAttribute('data-del-cust'));
     if(!confirm(`ลบรายชื่อ "${customersList[i].company}" ออกจากรายชื่อลูกค้า?`)) return;
+    const removedId = customersList[i].id;
     customersList.splice(i,1);
     await saveCustomers(); populateCustomerDatalist(); renderCustomersPanel();
+    deleteCustomerFromSheet(removedId);
   }));
   $('#btnAddCustomer').addEventListener('click', async () => {
     const company = $('#newCustCompany').value.trim();
@@ -1236,6 +1528,11 @@ $('#f_code').addEventListener('change', async () => {
   if(info && info.reset==='yearly' && !$('#f_customer').value.trim()){
     $('#f_customer').value = info.name;
     state.meta.customer = info.name;
+    const cust = findCustomer(info.name);
+    if(cust){
+      if(cust.attn){ $('#f_attn').value = cust.attn; state.meta.attn = cust.attn; }
+      if(cust.phone){ $('#f_customerPhone').value = cust.phone; state.meta.customerPhone = cust.phone; }
+    }
   }
   await refreshPendingIdAndPreview();
 });
@@ -1457,7 +1754,9 @@ function renderPreviewHTML(){
         </div>
         <div>
           <div class="role">ขอแสดงความนับถือ</div>
-          <div class="dots">…………………………</div>
+          ${(state.meta.signed && state.meta.appliedSignatureDataUrl)
+            ? `<div class="sig-image-wrap"><img src="${state.meta.appliedSignatureDataUrl}" class="sig-image" alt="ลายเซ็น"></div>`
+            : `<div class="dots">…………………………</div>`}
           <div class="name-line">(${(state.meta.signerName || state.meta.preparedBy) ? esc(state.meta.signerName || state.meta.preparedBy) : '&nbsp;'})</div>
           <div class="date-line">วันที่ ..... / ..... / .....</div>
         </div>
@@ -1516,11 +1815,11 @@ function updateStatusBox(){
 
 /* ============================= SAVE / REVISE ============================= */
 function currentRecordPayload(){
-  const { lineTotal, vat, grand } = computeTotals();
+  const { lineTotal, discountAmount, vat, grand } = computeTotals();
   return {
     meta: {...state.meta},
     items: state.items.map(it => ({...it})),
-    totals: { lineTotal, vat, grand },
+    totals: { lineTotal, discountAmount, vat, grand },
     updatedAt: Date.now()
   };
 }
@@ -1602,9 +1901,11 @@ async function handleRevise(){
   try{
     readFormIntoState();
     if(!state.baseNumber) return;
+    const changeNote = prompt('สรุปสิ่งที่แก้ไขในฉบับปรับปรุงนี้ (เช่น "เพิ่มส่วนลด 5%", "แก้ไขราคารายการที่ 2") จะถูกบันทึกไว้เป็นประวัติใน Google Sheets — เว้นว่างได้ถ้าไม่ต้องการระบุ:', '');
+    if(changeNote === null) return;
     state.revision += 1;
     state.editingId = `${state.baseNumber}-R${pad(state.revision,2)}`;
-    const record = {...currentRecordPayload(), createdAt: Date.now()};
+    const record = {...currentRecordPayload(), createdAt: Date.now(), revisionNote: changeNote};
     await saveRecord(state.editingId, record);
     await upsertIndexEntry(state.editingId);
     if(state.attachments.length){
@@ -1906,6 +2207,24 @@ $('#btnTestSheets').addEventListener('click', async () => {
     updateSheetsStatus('✗ ส่งไม่สำเร็จ: '+(res.error||'เช็ค URL อีกครั้ง'));
   }
 });
+$('#btnRefreshShared').addEventListener('click', async () => {
+  if(!sheetsConfig.enabled || !sheetsConfig.url){
+    alert('ยังไม่ได้เปิดใช้งานการซิงก์ กรุณาตั้งค่าและเปิดใช้งานก่อน');
+    return;
+  }
+  const btn = $('#btnRefreshShared');
+  const originalText = btn.textContent;
+  btn.textContent = 'กำลังดึงข้อมูล...';
+  btn.disabled = true;
+  await loadCodes();
+  await loadCustomers();
+  populateCodeSelect();
+  populateCustomerDatalist();
+  updateCodeResetHint();
+  btn.textContent = originalText;
+  btn.disabled = false;
+  alert(`ดึงข้อมูลล่าสุดแล้ว: รหัสบริษัท ${codesList.length} รายการ, ลูกค้า ${customersList.length} รายการ`);
+});
 
 function switchTab(name){
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-tab')===name));
@@ -1976,7 +2295,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click
   });
 })();
 
-(async function init(){
+async function runAppInit(){
+  await loadSheetsConfig();
   await loadCodes();
   populateCodeSelect();
   if(!state.meta.code) state.meta.code = codesList[0] ? codesList[0].code : '07';
@@ -1985,9 +2305,53 @@ document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click
   fillFormFromState();
   await refreshPendingIdAndPreview();
   historyCache = await loadIndex();
-  await loadSheetsConfig();
   updateSyncIndicator();
-})();
+  await loadSavedSignature();
+}
+
+/* ============================= SIGNATURE PIN ============================= */
+const SIG_PIN_HASH_KEY = 'smec:sig-pin-hash';
+async function sha256Hex(text){
+  const enc = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function verifyOrSetSignaturePin(){
+  const storedHash = await storeGet(SIG_PIN_HASH_KEY);
+  if(!storedHash){
+    const newPin = prompt('ยังไม่เคยตั้งรหัสผ่านสำหรับลงลายเซ็น กรุณาตั้งรหัสผ่าน (อย่างน้อย 4 ตัวอักษร):');
+    if(newPin === null) return false;
+    if(!newPin || newPin.length < 4){ alert('รหัสผ่านสั้นเกินไป'); return false; }
+    const confirmPin = prompt('พิมพ์รหัสผ่านอีกครั้งเพื่อยืนยัน:');
+    if(confirmPin !== newPin){ alert('รหัสผ่านไม่ตรงกัน ยกเลิกการลงลายเซ็น'); return false; }
+    await storeSet(SIG_PIN_HASH_KEY, await sha256Hex(newPin));
+    return true;
+  }
+  const entered = prompt('กรอกรหัสผ่านเพื่อยืนยันการลงลายเซ็นอิเล็กทรอนิกส์:');
+  if(entered === null) return false;
+  if(await sha256Hex(entered) === storedHash) return true;
+  alert('รหัสผ่านไม่ถูกต้อง ไม่ได้ลงลายเซ็น');
+  return false;
+}
+$('#btnChangeSigPassword').addEventListener('click', async () => {
+  const storedHash = await storeGet(SIG_PIN_HASH_KEY);
+  if(!storedHash){
+    alert('ยังไม่เคยตั้งรหัสผ่านลายเซ็น ระบบจะให้ตั้งอัตโนมัติครั้งแรกที่กด "ลงลายเซ็นอิเล็กทรอนิกส์"');
+    return;
+  }
+  const oldPw = prompt('กรอกรหัสผ่านลายเซ็นปัจจุบัน:');
+  if(oldPw === null) return;
+  if(await sha256Hex(oldPw) !== storedHash){ alert('รหัสผ่านปัจจุบันไม่ถูกต้อง'); return; }
+  const newPw = prompt('กรอกรหัสผ่านใหม่ (อย่างน้อย 4 ตัวอักษร):');
+  if(newPw === null) return;
+  if(!newPw || newPw.length < 4){ alert('รหัสผ่านสั้นเกินไป'); return; }
+  const confirmPw = prompt('พิมพ์รหัสผ่านใหม่อีกครั้งเพื่อยืนยัน:');
+  if(confirmPw !== newPw){ alert('รหัสผ่านที่พิมพ์ยืนยันไม่ตรงกัน ไม่ได้เปลี่ยนรหัสผ่าน'); return; }
+  await storeSet(SIG_PIN_HASH_KEY, await sha256Hex(newPw));
+  alert('เปลี่ยนรหัสผ่านลายเซ็นเรียบร้อยแล้ว');
+});
+
+runAppInit();
 </script>
 </body>
 </html>
