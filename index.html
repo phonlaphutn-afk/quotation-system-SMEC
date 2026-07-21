@@ -529,7 +529,9 @@ function thaiDateStr(dateObj){
 }
 function parseDateInput(v){
   if(!v) return new Date();
-  const [y,m,d] = v.split('-').map(Number);
+  const datePart = String(v).split('T')[0];
+  const [y,m,d] = datePart.split('-').map(Number);
+  if(!y || !m || !d) return new Date();
   return new Date(y, m-1, d);
 }
 
